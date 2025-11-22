@@ -174,3 +174,27 @@ p_spleen <- ggplot(as_tibble(sim_bind), aes(x = time)) +
 
 print(p_blood)
 print(p_spleen)
+
+# --- 5. TEST ACTIVATION MODEL ---
+mod_act <- mread("test_activation", "MODEL/PD/T-Cell-Activation", preclean = TRUE)
+
+sim_act <- mod_act %>%
+  ev(dose_combined) %>%
+  init(
+    TC_BLOOD = total_TC, BC_BLOOD = total_BC, 
+    TC_SPLEEN = total_TC * 30, BC_SPLEEN = total_BC * 30, 
+    TC_NODE = total_TC * 0.03, BC_NODE = total_BC * 0.03, 
+    TC_LYMPH = total_TC * 19, BC_LYMPH = total_BC * 19, 
+    AF_TC = 1, AF_BC = 1, INJ = 0,
+    # Activation starts at 0 (handled in $MAIN, but being explicit is good)
+    pATC_BLOOD = 0
+  ) %>%
+  mrgsim(end = 28, delta = 0.1, 
+         maxsteps = 50000) %>% # Standard settings should be fine!
+  as_tibble()
+
+# Plot: Expansion of T-Cells
+ggplot(sim_act, aes(x = time)) +
+  geom_line(aes(y = pATC_BLOOD, color = "Proliferating ATC (Blood)"), linewidth = 1) +
+  labs(title = "T-Cell Activation", y = "Cells (Count)", x = "Time (Days)") +
+  theme_bw()

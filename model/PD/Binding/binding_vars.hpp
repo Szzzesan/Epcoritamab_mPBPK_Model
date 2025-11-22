@@ -1,7 +1,7 @@
 // Units should be nmol/day
-// Global Scalar to handle stiffness without 'radau'
+// Global Scalar to handle stiffness
 // This slows reaction time from ~seconds to ~minutes, helping lsoda
-double scale_binding = 0.001;
+double scale_binding = 1.0;
 
 // === A. BLOOD ===
 // double C_FreeCD3_BL   = FREE_CD3_BLOOD / Vplasma;

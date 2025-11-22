@@ -75,12 +75,15 @@ INJ     // Injection effect tracker
 AF_TC   // Adaptive Feedback for T-cells
 AF_BC   // Adaptive Feedback for B-cells
 
-// Binding Compartments (Blood Only for now)
-FREE_CD3_BLOOD      // Free CD3 receptors in blood
-FREE_CD20_BLOOD     // Free CD20 receptors in blood
-DIMER_CD3_BLOOD     // Ab-CD3 complexes
-DIMER_CD20_BLOOD    // Ab-CD20 complexes
-TRIMER_BLOOD        // Ab-CD3-CD20 complexes
+// Binding Compartments (All tissues)
+// BLOOD
+FREE_CD3_BLOOD  FREE_CD20_BLOOD  DIMER_CD3_BLOOD  DIMER_CD20_BLOOD  TRIMER_BLOOD
+// SPLEEN
+FREE_CD3_SPLEEN FREE_CD20_SPLEEN DIMER_CD3_SPLEEN DIMER_CD20_SPLEEN TRIMER_SPLEEN
+// NODE
+FREE_CD3_NODE   FREE_CD20_NODE   DIMER_CD3_NODE   DIMER_CD20_NODE   TRIMER_NODE
+// LYMPH
+FREE_CD3_LYMPH  FREE_CD20_LYMPH  DIMER_CD3_LYMPH  DIMER_CD20_LYMPH  TRIMER_LYMPH
 
 $MAIN
 // Constants
@@ -94,14 +97,21 @@ double nmol_per_molecule = 1e9 / AVOG; // Helper to convert counts to nmol
 // If the time is 0, calculate the starting receptor amounts based on cell counts
 
 if(NEWIND <= 1) {
-  // 1. Get the Volume of Blood (Vplasma + Cell Volume approx, simplified to Vblood)
-  // For simplicity, we used Vplasma in the concentration calcs, so we use Vplasma here.
-  
-  // 2. Calculate Amount (nmol) = Cells/L * Volume(L) * Receptors/Cell * nmol/molecule
-  
-  // THEREFORE:
+  // Blood
   FREE_CD3_BLOOD_0  = TC_BLOOD_0 * R_CD3  * nmol_per_molecule;
   FREE_CD20_BLOOD_0 = BC_BLOOD_0 * R_CD20 * nmol_per_molecule;
+  
+  // Spleen
+  FREE_CD3_SPLEEN_0  = TC_SPLEEN_0 * R_CD3  * nmol_per_molecule;
+  FREE_CD20_SPLEEN_0 = BC_SPLEEN_0 * R_CD20 * nmol_per_molecule;
+  
+  // Node
+  FREE_CD3_NODE_0  = TC_NODE_0 * R_CD3  * nmol_per_molecule;
+  FREE_CD20_NODE_0 = BC_NODE_0 * R_CD20 * nmol_per_molecule;
+  
+  // Lymph
+  FREE_CD3_LYMPH_0  = TC_LYMPH_0 * R_CD3  * nmol_per_molecule;
+  FREE_CD20_LYMPH_0 = BC_LYMPH_0 * R_CD20 * nmol_per_molecule;
 }
 
 $ODE
