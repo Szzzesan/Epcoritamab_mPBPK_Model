@@ -1,7 +1,19 @@
 // Units should be nmol/day
 // Global Scalar to handle stiffness
 // This slows reaction time from ~seconds to ~minutes, helping lsoda
-double scale_binding = 0.01;
+double scale_binding = 0.1;
+
+// --- PLACEHOLDER FOR B-CELL KILLING (from previous step) ---
+double rate_kill_BC_BL = 0.0; 
+double rate_kill_BC_SP = 0.0; 
+double rate_kill_BC_LN = 0.0; 
+double rate_kill_BC_LY = 0.0; 
+
+// --- RECEPTOR INFLUX FROM NEW CELL PRODUCTION (Blood Only) ---
+// Logic: New Cells/Day * Receptors/Cell * nmol conversion
+// prod_TC and prod_BC come from traff_vars.hpp
+double prod_new_CD3_BL  = prod_TC * R_CD3 * nmol_per_molecule;
+double prod_new_CD20_BL = prod_BC * R_CD20 * nmol_per_molecule;
 
 // === A. BLOOD ===
 // double C_FreeCD3_BL   = FREE_CD3_BLOOD / Vplasma;
