@@ -17,7 +17,7 @@ if (Trimer_per_Tumor > Trimer_Threshold) {
 }
 
 double rate_act_Tumor = 0.0;
-if (TAFD > TAD) {
+if (TimeAfterDose > TAD) {
   rate_act_Tumor = RELU * sim_slopetumor * Trimer_per_Tumor;
 }
 
@@ -29,10 +29,10 @@ double Trimer_per_BC_SP = (BC_SPLEEN > 1) ? (TRIMER_SPLEEN / nmol_per_molecule) 
 double Trimer_per_BC_LN = (BC_NODE > 1)   ? (TRIMER_NODE / nmol_per_molecule) / BC_NODE   : 0.0;
 double Trimer_per_BC_LY = (BC_LYMPH > 1)  ? (TRIMER_LYMPH / nmol_per_molecule) / BC_LYMPH  : 0.0;
 
-double rate_act_BC_BL = (TAFD > TAD) ? sim_slope * Trimer_per_BC_BL : 0.0;
-double rate_act_BC_SP = (TAFD > TAD) ? sim_slope * Trimer_per_BC_SP : 0.0;
-double rate_act_BC_LN = (TAFD > TAD) ? sim_slope * Trimer_per_BC_LN : 0.0;
-double rate_act_BC_LY = (TAFD > TAD) ? sim_slope * Trimer_per_BC_LY : 0.0;
+double rate_act_BC_BL = (TimeAfterDose > TAD) ? sim_slope * Trimer_per_BC_BL : 0.0;
+double rate_act_BC_SP = (TimeAfterDose > TAD) ? sim_slope * Trimer_per_BC_SP : 0.0;
+double rate_act_BC_LN = (TimeAfterDose > TAD) ? sim_slope * Trimer_per_BC_LN : 0.0;
+double rate_act_BC_LY = (TimeAfterDose > TAD) ? sim_slope * Trimer_per_BC_LY : 0.0;
 
 // 3. Trafficking in and out
 // (1) vATC_BC Trafficking Flows
@@ -56,4 +56,4 @@ double exp_SP_rate = expand_factor * vATC_BC_SPLEEN;
 double exp_LN_rate = expand_factor * (vATC_BC_NODE + vATC_TUMOR_NODE); 
 double exp_LY_rate = expand_factor * vATC_BC_LYMPH;
 
-double rate_death_ATC = (TAFD > (TAD + Tp)) ? koutATC : 0.0;
+double rate_death_ATC = (TimeAfterDose > (TAD + Tp)) ? koutATC : 0.0;

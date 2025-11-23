@@ -120,7 +120,7 @@ $ODE @!audit
 #include "../Trafficking/traff_odes.hpp"
 #include "../Binding/binding_vars.hpp"
 #include "../Binding/binding_odes.hpp"
-double TAFD = TIME;
+double TimeAfterDose = TIME;
 #include "activation_vars.hpp"
 #include "activation_odes.hpp"
 
@@ -128,7 +128,7 @@ $TABLE
 #include "../../PK/pk_vars.hpp"
 #include "../Trafficking/traff_vars.hpp"
 #include "../Binding/binding_vars.hpp"
-double TAFD = TIME; 
+double TimeAfterDose = TIME; 
 #include "activation_vars.hpp"
 double Total_pATC = CLAMP(pATC_BLOOD) + CLAMP(pATC_SPLEEN) + CLAMP(pATC_NODE) + CLAMP(pATC_LYMPH);
 
