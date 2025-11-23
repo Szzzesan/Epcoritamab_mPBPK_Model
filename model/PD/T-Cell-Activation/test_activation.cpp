@@ -56,6 +56,7 @@ kintCD3     : 1.584   : Internalization of Ab-CD3 dimer (1/day)
 kintCD20    : 1.584   : Internalization of Ab-CD20 dimer (1/day)
 R_CD3       : 30000   : CD3 receptors per T-cell
 R_CD20      : 100000  : CD20 receptors per B-cell
+scale_binding : 0.01  : Scaling factor for stiffness control
 
 // --- Activation Params ---
 sim_slope        : 0.007 : Rate of T-cell activation against B cells
@@ -91,7 +92,7 @@ double nmol_per_molecule = 1e9 / AVOG;
 $MAIN
 // Initialize Activation Compartments to 0 (Start inactive)
 if(NEWIND <= 1) {
-  // Binding
+  // Binding (Initialize based on baseline cells)
   FREE_CD3_BLOOD_0  = TC_BLOOD_0 * R_CD3  * nmol_per_molecule;
   FREE_CD20_BLOOD_0 = BC_BLOOD_0 * R_CD20 * nmol_per_molecule;
   FREE_CD3_SPLEEN_0  = TC_SPLEEN_0 * R_CD3  * nmol_per_molecule;
@@ -101,7 +102,7 @@ if(NEWIND <= 1) {
   FREE_CD3_LYMPH_0  = TC_LYMPH_0 * R_CD3  * nmol_per_molecule;
   FREE_CD20_LYMPH_0 = BC_LYMPH_0 * R_CD20 * nmol_per_molecule;
   
-  //Activation
+  // Activation (Start at 0)
   vATC_BC_BLOOD_0 = 0; 
   vATC_BC_SPLEEN_0 = 0; 
   vATC_BC_NODE_0 = 0; 
@@ -120,7 +121,9 @@ $ODE @!audit
 #include "../Trafficking/traff_odes.hpp"
 #include "../Binding/binding_vars.hpp"
 #include "../Binding/binding_odes.hpp"
+
 double TimeAfterDose = TIME;
+
 #include "activation_vars.hpp"
 #include "activation_odes.hpp"
 
@@ -128,7 +131,9 @@ $TABLE
 #include "../../PK/pk_vars.hpp"
 #include "../Trafficking/traff_vars.hpp"
 #include "../Binding/binding_vars.hpp"
-double TimeAfterDose = TIME; 
+
+double TimeAfterDose = TIME;
+
 #include "activation_vars.hpp"
 double Total_pATC = CLAMP(pATC_BLOOD) + CLAMP(pATC_SPLEEN) + CLAMP(pATC_NODE) + CLAMP(pATC_LYMPH);
 
