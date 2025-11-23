@@ -176,7 +176,7 @@ print(p_blood)
 print(p_spleen)
 
 # --- 5. TEST ACTIVATION MODEL ---
-mod_act <- mread("test_activation", "MODEL/PD/T-Cell-Activation", preclean = TRUE)
+mod_act <- mread("test_activation", "model/PD/T-Cell-Activation", preclean = TRUE, verbose = TRUE)
 
 sim_act <- mod_act %>%
   ev(dose_combined) %>%
