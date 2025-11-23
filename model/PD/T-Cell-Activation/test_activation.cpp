@@ -56,7 +56,6 @@ kintCD3     : 1.584   : Internalization of Ab-CD3 dimer (1/day)
 kintCD20    : 1.584   : Internalization of Ab-CD20 dimer (1/day)
 R_CD3       : 30000   : CD3 receptors per T-cell
 R_CD20      : 100000  : CD20 receptors per B-cell
-scale_binding : 0.01  : Scaling factor for stiffness control
 
 // --- Activation Params ---
 sim_slope        : 0.007 : Rate of T-cell activation against B cells
@@ -88,6 +87,8 @@ $GLOBAL
 #define CLAMP(x) ((x) > 0 ? (x) : 0.0)
 double AVOG = 6.022e23;
 double nmol_per_molecule = 1e9 / AVOG;
+
+#include "activation_logic.hpp"
 
 $MAIN
 // Initialize Activation Compartments to 0 (Start inactive)
@@ -122,19 +123,48 @@ $ODE @!audit
 #include "../Binding/binding_vars.hpp"
 #include "../Binding/binding_odes.hpp"
 
-double TimeAfterDose = TIME;
+// #define TimeAfterDose TIME
+// #include "activation_vars.hpp"
+// #include "activation_odes.hpp"
+// #undef TimeAfterDose
 
-#include "activation_vars.hpp"
-#include "activation_odes.hpp"
+ActivationRates act_res = calculate_activation_rates(
+  TIME,
+  BC_BLOOD, BC_SPLEEN, BC_NODE, BC_LYMPH,
+  TRIMER_BLOOD, TRIMER_SPLEEN, TRIMER_NODE, TRIMER_LYMPH,
+  vATC_BC_BLOOD, vATC_BC_SPLEEN, vATC_BC_NODE, vATC_BC_LYMPH,
+  vATC_TUMOR_NODE,
+  pATC_BLOOD, pATC_SPLEEN, pATC_NODE, pATC_LYMPH,
+  INJ,
+  sim_slope, sim_slopetumor, expand_factor, koutATC,
+  TAD, Tp, Trimer_Threshold,
+  kpt, ktn, knl, klp, INJ_Scaler,
+  nmol_per_molecule
+);
+
+// Assign Derivatives
+dxdt_vATC_BC_BLOOD  = act_res.d_vATC_BC_BL;
+dxdt_vATC_BC_SPLEEN = act_res.d_vATC_BC_SP;
+dxdt_vATC_BC_NODE   = act_res.d_vATC_BC_LN;
+dxdt_vATC_BC_LYMPH  = act_res.d_vATC_BC_LY;
+dxdt_vATC_TUMOR_NODE= act_res.d_vATC_Tumor;
+dxdt_pATC_BLOOD     = act_res.d_pATC_BL;
+dxdt_pATC_SPLEEN    = act_res.d_pATC_SP;
+dxdt_pATC_NODE      = act_res.d_pATC_LN;
+dxdt_pATC_LYMPH     = act_res.d_pATC_LY;
+
+
 
 $TABLE
 #include "../../PK/pk_vars.hpp"
 #include "../Trafficking/traff_vars.hpp"
 #include "../Binding/binding_vars.hpp"
 
-double TimeAfterDose = TIME;
+// #define TimeAfterDose TIME
+// #include "activation_vars.hpp"
+// double Total_pATC = CLAMP(pATC_BLOOD) + CLAMP(pATC_SPLEEN) + CLAMP(pATC_NODE) + CLAMP(pATC_LYMPH);
+// #undef TimeAfterDose
 
-#include "activation_vars.hpp"
 double Total_pATC = CLAMP(pATC_BLOOD) + CLAMP(pATC_SPLEEN) + CLAMP(pATC_NODE) + CLAMP(pATC_LYMPH);
 
 $CAPTURE Total_pATC
