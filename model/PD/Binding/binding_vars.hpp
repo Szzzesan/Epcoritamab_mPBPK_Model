@@ -1,7 +1,7 @@
 // Units should be nmol/day
 // Global Scalar to handle stiffness
 // This slows reaction time from ~seconds to ~minutes, helping lsoda
-double scale_binding = 0.1;
+double scale_binding = 0.01;
 
 // --- PLACEHOLDER FOR B-CELL KILLING (from previous step) ---
 double rate_kill_BC_BL = 0.0; 
