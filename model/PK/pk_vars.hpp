@@ -11,4 +11,4 @@ double C_leaky  = LEAKY  / Vleaky;
 double C_tight  = TIGHT  / Vtight;
 double C_spleen = SPLEEN / Vspleen;
 double C_node   = NODE   / Vnode;
-double C_lymph  = LYMPH  / Vlymph
+double C_lymph  = LYMPH  / Vlymph;
