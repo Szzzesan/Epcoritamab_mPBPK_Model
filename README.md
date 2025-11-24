@@ -22,8 +22,7 @@ The model implements the work of *Li et al. (2022)*, simulating the interactions
 ├── data/ # not used here
 
 ├── output/
-│ ├── Epcoritamab_mPBPK_QSP.Rmd # R Markdown source for the final report
-│ └── Epcoritamab_mPBPK_QSP.html # html final report
+│ └── Epcoritamab_mPBPK_QSP.Rmd # R Markdown source for the final report
 
 └── Epcoritamab_mPBPK_Model.Rproj
 
