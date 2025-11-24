@@ -16,7 +16,7 @@ library(mrgsolve)
 library(tidyverse)
 library(patchwork) 
 ```
-### 1. Introduction
+## 1. Introduction
 This report implements the semi-mechanistic PBPK/PD model for Epcoritamab (CD3xCD20), based on Li et al. (2022). The model integrates five biological sub-systems to predict tumor response from first principles:  
 1.  **Pharmacokinetics (PK):** Two-pore distribution of the antibody.    
 2.  **Trafficking:** Recirculation of T-cells and B-cells between blood and lymphoid tissues.  
@@ -24,7 +24,7 @@ This report implements the semi-mechanistic PBPK/PD model for Epcoritamab (CD3xC
 4.  **Activation:** Trimer-dependent activation and expansion of cytotoxic T-cells.  
 5.  **Killing:** Elimination of B-cells and Tumor cells by activated T-cells.  
 
-### 2. Model Structure
+## 2. Model Structure
 The model is implemented in C++ using `mrgsolve`. It integrates five submodels (PK, Trafficking, Binding, Activation, Killing) into a single system of differential equations.
 ```{r write-model, class.source = 'fold-hide'}
 model_code <- '
@@ -547,7 +547,7 @@ $CAPTURE C_plasma Total_pATC C_Trimer_BL_nM Tumor_Vol_cm3
 writeLines(model_code, "../model/epc_complete_for_rmd.cpp")
 ```
 
-### 3. Simulation
+## 3. Simulation
 ```{r simulation-chunk, echo=TRUE, fig.width=12, fig.height=16}
 # 1. Load the Master Model
 mod <- mread("epc_complete_for_rmd", "../model", preclean = TRUE)
@@ -662,3 +662,43 @@ layout + plot_annotation(
   subtitle = 'Simulation of 48mg SC Dose at Day 7: Mechanisms and Efficacy'
 )
 ```
+
+## 4. Insights & Discussion
+
+The simulation of the Epcoritamab mPBPK-QSP model yielded several key insights into the pharmacology of T-cell engaging bispecific antibodies. These can be categorized into biological mechanisms and technical modeling challenges.
+
+#### A. Biological & Clinical Insights
+
+**1. The "Kamikaze" Pharmacodynamics of Target Depletion**
+A unique feature of this bispecific antibody is that its pharmacological activity (killing) destroys the very scaffold required for its activity (the target B-cell).   
+* **Insight:** The Trimer concentration profile (Panel 5) is **biphasic**.   
+    * *Phase 1 (The Spike):* Rapid binding to the large baseline B-cell population.  
+    * *Phase 2 (The Crash):* As T-cells activate and kill B-cells, the "anchors" for the trimers are destroyed, causing trimer levels to plummet even while drug levels are high.  
+    * *Phase 3 (The Hump):* A secondary wave of trimer formation (Panel 5 zoomed in) occurs as the T-cell army expands ($pATC$), increasing the availability of CD3 binding sites.    
+* **Clinical Implication:** Efficacy is self-limiting in a way that traditional chemotherapy is not. The drug needs to recruit T-cells fast enough to kill the tumor *before* it runs out of B-cell targets to anchor the synapse.  
+
+**2. B-Cell Aplasia is a Feature, Not a Bug**
+The model successfully reproduces profound B-cell depletion (Panel 4).  
+* **Insight:** Even as drug levels decline (Panel 1), B-cell counts remain suppressed near zero. This occurs because the killing rate (driven by drug levels far above the $K_D$) vastly exceeds the bone marrow's natural production rate ($\approx 2 \times 10^8$ cells/day).  
+* **Clinical Implication:** This confirms the mechanism of prolonged immunosuppression observed clinically, necessitating immunoglobulin replacement therapy in some patients. Recovery only begins when drug levels drop significantly below the effective concentration.  
+
+**3. The Injection Effect (Margination)**  
+The model captures the transient drop in peripheral lymphocytes immediately after dosing (Panel 2).  
+* **Insight:** This is not due to cell death, but rather **margination**—the trafficking of cells from the blood into tissues (Spleen) triggered by the injection event. The homeostatic feedback loop ($AF_{TC/BC}$) correctly identifies this as a "loss" and upregulates production, leading to the subsequent rebound.  
+
+#### B. Technical & Modeling Insights
+
+**1. Handling Stiff Systems in QSP**  
+The model presents a classic "stiff" differential equation problem: binding reactions occur on the scale of seconds/minutes ($k_{on}$), while cell growth occurs over days/weeks.  
+* **Challenge:** Standard solvers failed with `maxsteps` errors or required infinitesimal step sizes.  
+* **Solution:** I successfully stabilized the model by using a robust ODE solver configuration (`atol/rtol = 1e-3`) and verifying that parameter scaling (e.g., `scale_binding`) did not alter the equilibrium state. This highlights the trade-off between physical precision (microseconds) and clinical relevance (weeks).  
+
+**2. Mass Conservation in Receptor Recycling**
+A critical implementation detail was ensuring mass conservation during cell death.  
+* **Insight:** When a cell dies (naturally or via killing), the surface complexes (Dimers and Trimers) do not simply vanish.  
+* **Implementation:** I modeled the "Recycling" pathway: when a B-cell dies, the $Drug-CD3-CD20$ trimer breaks, releasing the $Drug-CD3$ dimer back into the T-cell pool. Omitting this term would lead to an artificial "sink" of the drug and underestimate T-cell engagement.  
+
+**3. Unit Scaling is Critical for "Relative" Parameters**  
+Parameters from literature (e.g., `sim_slope`, `kkill`) are sometimes reported in "per million cells" units, whereas ODE models track single cells.  
+* **Insight:** Direct implementation of literature values led to "instant wipeout" events (killing rates $10^{12}$ times too fast).  
+* **Correction:** Explicit dimensional analysis and scaling (multiplying/dividing by $10^6$) were required to translate population-level parameters into cell-level mechanistic logic.  
