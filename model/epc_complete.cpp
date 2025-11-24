@@ -1,0 +1,514 @@
+$PARAM @annotated
+// --- PK Parameters ---
+ka          : 0.131   : Absorption rate (1/day)
+CL          : 2.47    : Clearance (L/day)
+Km          : 0.0461  : MM constant (nM)
+Vmax        : 0.185   : Max nonlinear clearance (nM/day)
+Vplasma     : 2.6     : Plasma volume (L)
+Vleaky      : 4.37    : Leaky tissue volume (L)
+Vtight      : 8.11    : Tight tissue volume (L)
+Vspleen     : 0.0433  : Spleen volume (L)
+Vnode       : 0.0082  : Node volume (L)
+Vlymph      : 5.2     : Lymph volume (L)
+Lleaky      : 1.94    : Flow leaky (L/day)
+Ltight      : 0.957   : Flow tight (L/day)
+Lspleen     : 0.304   : Flow spleen (L/day)
+L           : 2.9     : Total lymph flow (L/day)
+sigma_leaky : 0.85    : Sigma leaky
+sigma_tight : 0.95    : Sigma tight
+sigma_spleen: 0.85    : Sigma spleen
+sigma_lymph : 0.2     : Sigma lymph
+
+// --- Trafficking Parameters ---
+kinTC       : 310e6   : TC production (cells/day)
+koutTC      : 0.00422 : TC death (1/day)
+kinBC       : 223e6   : BC production (cells/day)
+koutBC      : 0.0189  : BC death (1/day)
+kpt         : 50      : Blood to Spleen (1/day)
+ktn         : 1.67    : Spleen to Node (1/day)
+knl         : 1672    : Node to Lymph (1/day)
+klp         : 2.63    : Lymph to Blood (1/day)
+kdecay      : 0.681   : Injection effect decay (1/day)
+INJ_Scaler  : 9.08    : Injection effect magnitude
+kt          : 0.00027 : Homeostasis rate (1/day)
+r           : 2.24    : Homeostasis strength
+TC_base_count : 7.345e9 : Baseline Total T-Cells in Blood 
+BC_base_count : 1.18e9  : Baseline Total B-Cells in Blood
+
+// --- Binding Parameters ---
+konCD3      : 18.1    : Assoc CD3 (L/nmol/day)
+koffCD3     : 285     : Dissoc CD3 (1/day)
+konCD20     : 4.15    : Assoc CD20 (L/nmol/day)
+koffCD20    : 22.5    : Dissoc CD20 (1/day)
+kdegCD3     : 1.584   : Degradation CD3 (1/day)
+kdegCD20    : 1.584   : Degradation CD20 (1/day)
+kintCD3     : 1.584   : Internalization CD3 (1/day)
+kintCD20    : 1.584   : Internalization CD20 (1/day)
+R_CD3       : 30000   : Receptors/TC
+R_CD20      : 100000  : Receptors/BC
+scale_binding : 1.0     : Stiffness control 
+
+// --- Activation & Killing Parameters ---
+sim_slope        : 0.007e6 : Activation rate vs BC
+sim_slopetumor   : 7  : Activation rate vs Tumor
+expand_factor    : 9.27  : T-cell expansion (1/day)
+koutATC          : 0.05  : ATC death (1/day)
+TAD              : 3.0   : Activation delay (days)
+Tp               : 10.8  : Proliferation duration (days)
+Trimer_Threshold : 24    : Threshold for tumor activation
+kkill_BC         : 0.544e-6 : Killing rate constant (L^2/cells/day)
+  
+// --- Tumor Parameters ---
+kgrowth_DLBCL    : 0.0301     : Tumor growth rate (1/day)
+Tumor_r0         : 1.40       : Initial tumor radius (cm)
+tumor_capacity   : 1.0e-12    : Capacity factor (1/cell)
+depth            : 0.01       : Reachable depth (cm)
+kkill_tumor      : 0.165e-6   : Killing rate Tumor (L^2/cells/day)
+R_CD20_tumor     : 30000      : Receptors/Tumor Cell
+
+$CMT
+// PK Compartments
+DEPOT PLASMA LEAKY TIGHT SPLEEN NODE LYMPH
+
+// Lymphocyte Compartments (TC = T-cells, BC = B-cells)
+TC_BLOOD TC_SPLEEN TC_NODE TC_LYMPH
+BC_BLOOD BC_SPLEEN BC_NODE BC_LYMPH
+INJ 
+AF_TC //adaptive feedback
+AF_BC
+
+// Binding Compartments (All tissues healthy)
+FREE_CD3_BLOOD  FREE_CD20_BLOOD  DIMER_CD3_BLOOD  DIMER_CD20_BLOOD  TRIMER_BLOOD
+FREE_CD3_SPLEEN FREE_CD20_SPLEEN DIMER_CD3_SPLEEN DIMER_CD20_SPLEEN TRIMER_SPLEEN
+FREE_CD3_NODE   FREE_CD20_NODE   DIMER_CD3_NODE   DIMER_CD20_NODE   TRIMER_NODE
+FREE_CD3_LYMPH  FREE_CD20_LYMPH  DIMER_CD3_LYMPH  DIMER_CD20_LYMPH  TRIMER_LYMPH
+
+// ACTIVATION
+vATC_BC_BLOOD vATC_BC_SPLEEN vATC_BC_NODE vATC_BC_LYMPH
+vATC_TUMOR_NODE
+pATC_BLOOD pATC_SPLEEN pATC_NODE pATC_LYMPH
+// TUMOR
+TUMOR_CELLS
+FREE_CD20_TUMOR DIMER_CD20_TUMOR TRIMER_TUMOR
+
+// CLOCK
+T_SIM
+
+$GLOBAL
+#define CLAMP(x) ((x) > 0 ? (x) : 0.0)
+  // Constants
+  double AVOG = 6.022e23;
+double nmol_per_molecule = 1e9 / AVOG; // Helper to convert counts to nmol
+double PI = 3.14159265359; //Helper to calculate volume
+
+$MAIN
+// Auto-Initialization
+if(NEWIND <= 1) {
+  // Binding: Init based on baseline cells
+  FREE_CD3_BLOOD_0  = TC_BLOOD_0 * R_CD3  * nmol_per_molecule;
+  FREE_CD20_BLOOD_0 = BC_BLOOD_0 * R_CD20 * nmol_per_molecule;
+  FREE_CD3_SPLEEN_0 = TC_SPLEEN_0 * R_CD3  * nmol_per_molecule;
+  FREE_CD20_SPLEEN_0= BC_SPLEEN_0 * R_CD20 * nmol_per_molecule;
+  FREE_CD3_NODE_0   = TC_NODE_0 * R_CD3  * nmol_per_molecule;
+  FREE_CD20_NODE_0  = BC_NODE_0 * R_CD20 * nmol_per_molecule;
+  FREE_CD3_LYMPH_0  = TC_LYMPH_0 * R_CD3  * nmol_per_molecule;
+  FREE_CD20_LYMPH_0 = BC_LYMPH_0 * R_CD20 * nmol_per_molecule;
+  // 2. Tumor Init
+  double Vol_Tumor_mL_0 = (4.0/3.0) * PI * pow(Tumor_r0, 3.0);
+  TUMOR_CELLS_0 = Vol_Tumor_mL_0 * 1e9;
+  // Initialize Tumor Binding
+  FREE_CD20_TUMOR_0 = TUMOR_CELLS_0 * R_CD20_tumor * nmol_per_molecule; //unit: nmol
+  // Initialize Clock
+  T_SIM_0 = 0;
+}
+
+
+$ODE
+{
+  // --- CLOCK ODE ---
+  dxdt_T_SIM = 1; 
+  
+  // ------------------------------------------------------------------
+  // 1. PK SUBMODEL EQUATIONS
+  // ------------------------------------------------------------------
+  double C_plasma = PLASMA / Vplasma; //nmol/L
+  double C_leaky  = LEAKY  / Vleaky;
+  double C_tight  = TIGHT  / Vtight;
+  double C_spleen = SPLEEN / Vspleen;
+  double C_node   = NODE   / Vnode;
+  double C_lymph  = LYMPH  / Vlymph;
+  
+  double dist_plasma_leaky  = Lleaky  * (1.0 - sigma_leaky)  * C_plasma;
+  double dist_plasma_tight  = Ltight  * (1.0 - sigma_tight)  * C_plasma;
+  double dist_plasma_spleen = Lspleen * (1.0 - sigma_spleen) * C_plasma;
+  double dist_leaky_lymph   = Lleaky  * (1.0 - sigma_lymph)  * C_leaky;
+  double dist_tight_lymph   = Ltight  * (1.0 - sigma_lymph)  * C_tight;
+  double dist_spleen_node   = Lspleen * (1.0 - sigma_lymph)  * C_spleen;
+  double dist_node_lymph    = Lspleen * C_node;
+  double dist_lymph_plasma  = L * C_lymph;
+  
+  double elim_linear    = CL * C_plasma;
+  double elim_nonlinear = (Vmax * C_plasma) / (Km + C_plasma) * Vplasma;
+  
+  dxdt_DEPOT  = -ka * DEPOT;
+  dxdt_PLASMA = -elim_linear - elim_nonlinear - dist_plasma_leaky - dist_plasma_tight - dist_plasma_spleen + dist_lymph_plasma;
+  dxdt_LEAKY  = dist_plasma_leaky - dist_leaky_lymph;
+  dxdt_TIGHT  = dist_plasma_tight - dist_tight_lymph;
+  dxdt_SPLEEN = dist_plasma_spleen - dist_spleen_node;
+  dxdt_NODE   = dist_spleen_node - dist_node_lymph;
+  dxdt_LYMPH  = (ka * DEPOT) + dist_leaky_lymph + dist_tight_lymph + dist_node_lymph - dist_lymph_plasma;
+  
+  // ------------------------------------------------------------------
+  // 2. LYMPHOCYTE TRAFFICKING SUBMODEL
+  // ------------------------------------------------------------------
+  // The "Injection Effect": Drives cells out of blood into spleen temporarily
+  dxdt_INJ = -kdecay * INJ;
+  
+  double TC_Current_Total = TC_BLOOD + pATC_BLOOD;
+  double Drive_TC = TC_base_count / (TC_Current_Total > 1.0 ? TC_Current_Total : 1.0);
+  dxdt_AF_TC = kt * (Drive_TC - AF_TC);
+  
+  double BC_Current_Total = BC_BLOOD;
+  double Drive_BC = BC_base_count / (BC_Current_Total > 1.0 ? BC_Current_Total : 1.0);
+  dxdt_AF_BC = kt * (Drive_BC - AF_BC);
+
+  double prod_TC = kinTC * pow(CLAMP(AF_TC), r);
+  double prod_BC = kinBC * pow(CLAMP(AF_BC), r);
+  
+  // Rate constants for flows //Unit: day^(-1)
+  double rate_BL_SP = kpt * (1 + INJ_Scaler * INJ);
+  double rate_SP_LN = ktn;
+  double rate_LN_LY = knl;
+  double rate_LY_BL = klp;
+  
+  // ============================================================
+  // 3. ACTIVATION VARIABLES //Unit: Cells/L
+  // ============================================================
+  double C_vATC_BL = vATC_BC_BLOOD / Vplasma;
+  double C_vATC_SP = vATC_BC_SPLEEN / Vspleen;
+  double C_vATC_LN = vATC_BC_NODE   / Vnode;
+  double C_vATC_LY = vATC_BC_LYMPH  / Vlymph;
+  double C_vATC_Tumor = vATC_TUMOR_NODE / Vnode;
+  
+  // ============================================================
+  // 4. B-CELL KILLING SUBMODEL
+  // ============================================================
+  double C_BC_BL   = BC_BLOOD / Vplasma;
+  double C_BC_SP   = BC_SPLEEN / Vspleen;
+  double C_BC_LN   = BC_NODE   / Vnode;
+  double C_BC_LY   = BC_LYMPH  / Vlymph;
+  
+  // Calculate Killing RATES (Cells/Day)
+  // Formula: kkill * C_vATC * C_BC
+  // the inputs to the killing function should be concentrations (Cells/L).
+  double rate_kill_BC_BL = kkill_BC * C_vATC_BL * C_BC_BL;
+  double rate_kill_BC_SP = kkill_BC * C_vATC_SP * C_BC_SP;
+  double rate_kill_BC_LN = kkill_BC * C_vATC_LN * C_BC_LN;
+  double rate_kill_BC_LY = kkill_BC * C_vATC_LY * C_BC_LY;
+  
+  // Effective Death Rate (1/Day)
+  double k_kill_BL = (BC_BLOOD > 1.0)  ? (rate_kill_BC_BL / BC_BLOOD)  : 0.0;
+  double k_kill_SP = (BC_SPLEEN > 1.0) ? (rate_kill_BC_SP / BC_SPLEEN) : 0.0;
+  double k_kill_LN = (BC_NODE > 1.0)   ? (rate_kill_BC_LN / BC_NODE)   : 0.0;
+  double k_kill_LY = (BC_LYMPH > 1.0)  ? (rate_kill_BC_LY / BC_LYMPH)  : 0.0;
+  
+  // ============================================================
+  // 5. TUMOR SUBMODEL
+  // ============================================================
+  double Cells_Total = CLAMP(TUMOR_CELLS); //Total number of tumor cells in the tumor lymph node
+  
+  // A. Geometry
+  // This assumes 1 mL of tumor contain 1e9 tumor cells.
+  double Vol_Tumor_mL = Cells_Total / 1e9; 
+  double R_tumor = pow( (3.0 * Vol_Tumor_mL) / (4.0 * PI), 1.0/3.0 ); 
+  
+  double Vol_Reachable_mL = 0.0;
+  if (R_tumor > depth) {
+    double R_core = R_tumor - depth;
+    Vol_Reachable_mL = Vol_Tumor_mL - ((4.0/3.0) * PI * pow(R_core, 3.0));
+  } else {
+    Vol_Reachable_mL = Vol_Tumor_mL;
+  }
+  double Cells_Reachable = Vol_Reachable_mL * 1e9;
+  double C_Tumor_Reachable = Cells_Reachable / Vnode;
+  // B. Tumor Growth //unit: cell/day
+  double rate_growth = kgrowth_DLBCL * Cells_Total * (1.0 - tumor_capacity * Cells_Total);
+  // C. Tumor Killing 
+  double rate_kill_Tumor = kkill_tumor * C_vATC_Tumor * C_Tumor_Reachable; //unit: L^2/cells/day * cell/L * cell/L = cell/day
+  double k_kill_Tumor_frac = (Cells_Reachable > 1.0) ? (rate_kill_Tumor / Cells_Reachable) : 0.0; // unit: 1/day
+  
+  dxdt_TUMOR_CELLS = rate_growth - rate_kill_Tumor;
+  
+  // ============================================================
+  // 6. TRAFFICKING ODES Unit: cells/day
+  // ============================================================
+  // T-Cells (No killing, just flow & death)
+  dxdt_TC_BLOOD  = prod_TC - koutTC * TC_BLOOD - rate_BL_SP * TC_BLOOD + rate_LY_BL * TC_LYMPH;
+  dxdt_TC_SPLEEN = rate_BL_SP * TC_BLOOD - rate_SP_LN * TC_SPLEEN - koutTC * TC_SPLEEN;
+  dxdt_TC_NODE   = rate_SP_LN * TC_SPLEEN - rate_LN_LY * TC_NODE - koutTC * TC_NODE;
+  dxdt_TC_LYMPH  = rate_LN_LY * TC_NODE - rate_LY_BL * TC_LYMPH - koutTC * TC_LYMPH;
+  
+  // B-Cells (Trafficking Flow + Death + KILLING)
+  dxdt_BC_BLOOD  = prod_BC - koutBC * BC_BLOOD - rate_BL_SP * BC_BLOOD + rate_LY_BL * BC_LYMPH - rate_kill_BC_BL;
+  dxdt_BC_SPLEEN = rate_BL_SP * BC_BLOOD - rate_SP_LN * BC_SPLEEN - koutBC * BC_SPLEEN - rate_kill_BC_SP;
+  dxdt_BC_NODE   = rate_SP_LN * BC_SPLEEN - rate_LN_LY * BC_NODE - koutBC * BC_NODE - rate_kill_BC_LN;
+  dxdt_BC_LYMPH  = rate_LN_LY * BC_NODE - rate_LY_BL * BC_LYMPH - koutBC * BC_LYMPH - rate_kill_BC_LY;
+  
+  // ============================================================
+  // 7. BINDING SUBMODEL
+  // ============================================================
+  // Helper variables for binding concentrations //unit: nmol/L
+  double C_FreeCD3_BL   = FREE_CD3_BLOOD / Vplasma; //FREE_CD3_BLOOd is in nmol
+  double C_FreeCD20_BL  = FREE_CD20_BLOOD / Vplasma;
+  double C_DimerCD3_BL  = DIMER_CD3_BLOOD / Vplasma; 
+  double C_DimerCD20_BL = DIMER_CD20_BLOOD / Vplasma;
+  double C_Trimer_BL    = TRIMER_BLOOD / Vplasma;
+  
+  double C_FreeCD3_SP = FREE_CD3_SPLEEN/Vspleen; double C_FreeCD20_SP = FREE_CD20_SPLEEN/Vspleen;
+  double C_DimerCD3_SP = DIMER_CD3_SPLEEN/Vspleen; double C_DimerCD20_SP = DIMER_CD20_SPLEEN/Vspleen;
+  double C_Trimer_SP = TRIMER_SPLEEN/Vspleen;
+  
+  double C_FreeCD3_LN = FREE_CD3_NODE/Vnode; double C_FreeCD20_LN = FREE_CD20_NODE/Vnode;
+  double C_DimerCD3_LN = DIMER_CD3_NODE/Vnode; double C_DimerCD20_LN = DIMER_CD20_NODE/Vnode;
+  double C_Trimer_LN = TRIMER_NODE/Vnode;
+  
+  double C_FreeCD3_LY = FREE_CD3_LYMPH/Vlymph; double C_FreeCD20_LY = FREE_CD20_LYMPH/Vlymph;
+  double C_DimerCD3_LY = DIMER_CD3_LYMPH/Vlymph; double C_DimerCD20_LY = DIMER_CD20_LYMPH/Vlymph;
+  double C_Trimer_LY = TRIMER_LYMPH/Vlymph;
+  
+  // Tumor Binding Vars (in node only)
+  double C_FreeCD20_Tumor = FREE_CD20_TUMOR / Vnode;
+  double C_DimerCD20_Tumor = DIMER_CD20_TUMOR / Vnode;
+  double C_Trimer_Tumor    = TRIMER_TUMOR / Vnode;
+  
+  // --- Velocities //unit: nmol/day ---
+  // BLOOD
+  double vf_DimerCD3_BL  = scale_binding * konCD3 * C_plasma * C_FreeCD3_BL * Vplasma;
+  double vf_DimerCD20_BL = scale_binding * konCD20 * C_plasma * C_FreeCD20_BL * Vplasma;
+  double vb_DimerCD3_BL  = scale_binding * koffCD3 * C_DimerCD3_BL * Vplasma;
+  double vb_DimerCD20_BL = scale_binding * koffCD20 * C_DimerCD20_BL * Vplasma;
+  double vf_Tri_viaCD3_BL  = scale_binding * konCD20 * C_DimerCD3_BL * C_FreeCD20_BL * Vplasma;
+  double vf_Tri_viaCD20_BL = scale_binding * konCD3 * C_DimerCD20_BL * C_FreeCD3_BL * Vplasma;
+  double vb_Tri_toCD3_BL   = scale_binding * koffCD20 * C_Trimer_BL * Vplasma;
+  double vb_Tri_toCD20_BL  = scale_binding * koffCD3 * C_Trimer_BL * Vplasma;
+  
+  // SPLEEN
+  double vf_DimerCD3_SP  = scale_binding * konCD3 * C_spleen * C_FreeCD3_SP * Vspleen;
+  double vf_DimerCD20_SP = scale_binding * konCD20 * C_spleen * C_FreeCD20_SP * Vspleen;
+  double vb_DimerCD3_SP  = scale_binding * koffCD3 * C_DimerCD3_SP * Vspleen;
+  double vb_DimerCD20_SP = scale_binding * koffCD20 * C_DimerCD20_SP * Vspleen;
+  double vf_Tri_viaCD3_SP  = scale_binding * konCD20 * C_DimerCD3_SP * C_FreeCD20_SP * Vspleen;
+  double vf_Tri_viaCD20_SP = scale_binding * konCD3 * C_DimerCD20_SP * C_FreeCD3_SP * Vspleen;
+  double vb_Tri_toCD3_SP   = scale_binding * koffCD20 * C_Trimer_SP * Vspleen;
+  double vb_Tri_toCD20_SP  = scale_binding * koffCD3 * C_Trimer_SP * Vspleen;
+  
+  // NODE (Healthy)
+  double vf_DimerCD3_LN  = scale_binding * konCD3 * C_node * C_FreeCD3_LN * Vnode;
+  double vf_DimerCD20_LN = scale_binding * konCD20 * C_node * C_FreeCD20_LN * Vnode;
+  double vb_DimerCD3_LN  = scale_binding * koffCD3 * C_DimerCD3_LN * Vnode;
+  double vb_DimerCD20_LN = scale_binding * koffCD20 * C_DimerCD20_LN * Vnode;
+  double vf_Tri_viaCD3_LN  = scale_binding * konCD20 * C_DimerCD3_LN * C_FreeCD20_LN * Vnode;
+  double vf_Tri_viaCD20_LN = scale_binding * konCD3 * C_DimerCD20_LN * C_FreeCD3_LN * Vnode;
+  double vb_Tri_toCD3_LN   = scale_binding * koffCD20 * C_Trimer_LN * Vnode;
+  double vb_Tri_toCD20_LN  = scale_binding * koffCD3 * C_Trimer_LN * Vnode;
+  
+  // NODE (Tumor)
+  double vf_DimerCD20_Tumor = scale_binding * konCD20 * C_node * C_FreeCD20_Tumor * Vnode;
+  double vb_DimerCD20_Tumor = scale_binding * koffCD20 * C_DimerCD20_Tumor * Vnode;
+  double vf_Tri_Tumor_viaCD3 = scale_binding * konCD20 * C_DimerCD3_LN * C_FreeCD20_Tumor * Vnode; 
+  double vf_Tri_Tumor_viaCD20= scale_binding * konCD3 * C_DimerCD20_Tumor * C_FreeCD3_LN * Vnode; 
+  double vb_Tri_Tumor_toCD3  = scale_binding * koffCD20 * C_Trimer_Tumor * Vnode;
+  double vb_Tri_Tumor_toCD20 = scale_binding * koffCD3 * C_Trimer_Tumor * Vnode;
+  
+  // LYMPH
+  double vf_DimerCD3_LY  = scale_binding * konCD3 * C_lymph * C_FreeCD3_LY * Vlymph;
+  double vf_DimerCD20_LY = scale_binding * konCD20 * C_lymph * C_FreeCD20_LY * Vlymph;
+  double vb_DimerCD3_LY  = scale_binding * koffCD3 * C_DimerCD3_LY * Vlymph;
+  double vb_DimerCD20_LY = scale_binding * koffCD20 * C_DimerCD20_LY * Vlymph;
+  double vf_Tri_viaCD3_LY  = scale_binding * konCD20 * C_DimerCD3_LY * C_FreeCD20_LY * Vlymph;
+  double vf_Tri_viaCD20_LY = scale_binding * konCD3 * C_DimerCD20_LY * C_FreeCD3_LY * Vlymph;
+  double vb_Tri_toCD3_LY   = scale_binding * koffCD20 * C_Trimer_LY * Vlymph;
+  double vb_Tri_toCD20_LY  = scale_binding * koffCD3 * C_Trimer_LY * Vlymph;
+  
+  // --- Syntheses of Free CD3 and CD20 due to Natural Turnover //unit: nmol/day ---
+  double syn_CD3_BL  = kdegCD3 * CLAMP(TC_BLOOD) * R_CD3 * nmol_per_molecule;
+  double syn_CD20_BL = kdegCD20 * CLAMP(BC_BLOOD) * R_CD20 * nmol_per_molecule;
+  double syn_CD3_SP  = kdegCD3 * CLAMP(TC_SPLEEN) * R_CD3 * nmol_per_molecule;
+  double syn_CD20_SP = kdegCD20 * CLAMP(BC_SPLEEN) * R_CD20 * nmol_per_molecule;
+  double syn_CD3_LN  = kdegCD3 * CLAMP(TC_NODE) * R_CD3 * nmol_per_molecule;
+  double syn_CD20_LN = kdegCD20 * CLAMP(BC_NODE) * R_CD20 * nmol_per_molecule;
+  double syn_CD3_LY  = kdegCD3 * CLAMP(TC_LYMPH) * R_CD3 * nmol_per_molecule;
+  double syn_CD20_LY = kdegCD20 * CLAMP(BC_LYMPH) * R_CD20 * nmol_per_molecule;
+  
+  // --- Flows --- 
+  // Blood
+  double flow_FreeCD3_BL   = rate_LY_BL * FREE_CD3_LYMPH   - rate_BL_SP * FREE_CD3_BLOOD;
+  double flow_FreeCD20_BL  = rate_LY_BL * FREE_CD20_LYMPH - rate_BL_SP * FREE_CD20_BLOOD;
+  double flow_DimerCD3_BL  = rate_LY_BL * DIMER_CD3_LYMPH - rate_BL_SP * DIMER_CD3_BLOOD;
+  double flow_DimerCD20_BL = rate_LY_BL * DIMER_CD20_LYMPH- rate_BL_SP * DIMER_CD20_BLOOD;
+  double flow_Trimer_BL    = rate_LY_BL * TRIMER_LYMPH    - rate_BL_SP * TRIMER_BLOOD;
+  // Spleen
+  double flow_FreeCD3_SP   = rate_BL_SP * FREE_CD3_BLOOD  - rate_SP_LN * FREE_CD3_SPLEEN;
+  double flow_FreeCD20_SP  = rate_BL_SP * FREE_CD20_BLOOD - rate_SP_LN * FREE_CD20_SPLEEN;
+  double flow_DimerCD3_SP  = rate_BL_SP * DIMER_CD3_BLOOD - rate_SP_LN * DIMER_CD3_SPLEEN;
+  double flow_DimerCD20_SP = rate_BL_SP * DIMER_CD20_BLOOD- rate_SP_LN * DIMER_CD20_SPLEEN;
+  double flow_Trimer_SP    = rate_BL_SP * TRIMER_BLOOD    - rate_SP_LN * TRIMER_SPLEEN;
+  // Node
+  double flow_FreeCD3_LN   = rate_SP_LN * FREE_CD3_SPLEEN - rate_LN_LY * FREE_CD3_NODE;
+  double flow_FreeCD20_LN  = rate_SP_LN * FREE_CD20_SPLEEN- rate_LN_LY * FREE_CD20_NODE;
+  double flow_DimerCD3_LN  = rate_SP_LN * DIMER_CD3_SPLEEN- rate_LN_LY * DIMER_CD3_NODE;
+  double flow_DimerCD20_LN = rate_SP_LN * DIMER_CD20_SPLEEN-rate_LN_LY * DIMER_CD20_NODE;
+  double flow_Trimer_LN    = rate_SP_LN * TRIMER_SPLEEN   - rate_LN_LY * TRIMER_NODE;
+  // Lymph
+  double flow_FreeCD3_LY   = rate_LN_LY * FREE_CD3_NODE   - rate_LY_BL * FREE_CD3_LYMPH;
+  double flow_FreeCD20_LY  = rate_LN_LY * FREE_CD20_NODE  - rate_LY_BL * FREE_CD20_LYMPH;
+  double flow_DimerCD3_LY  = rate_LN_LY * DIMER_CD3_NODE  - rate_LY_BL * DIMER_CD3_LYMPH;
+  double flow_DimerCD20_LY = rate_LN_LY * DIMER_CD20_NODE - rate_LY_BL * DIMER_CD20_LYMPH;
+  double flow_Trimer_LY    = rate_LN_LY * TRIMER_NODE     - rate_LY_BL * TRIMER_LYMPH;
+  
+  // --- Production ---
+  double prod_new_CD3_BL  = prod_TC * R_CD3 * nmol_per_molecule;
+  double prod_new_CD20_BL = prod_BC * R_CD20 * nmol_per_molecule;
+  
+  // --- ODES: BINDING ---
+  // BLOOD
+  dxdt_FREE_CD3_BLOOD   = -vf_DimerCD3_BL + vb_DimerCD3_BL - vf_Tri_viaCD20_BL + vb_Tri_toCD20_BL 
+  + syn_CD3_BL - kdegCD3 * C_FreeCD3_BL * Vplasma + flow_FreeCD3_BL 
+  + prod_new_CD3_BL - koutTC * C_FreeCD3_BL * Vplasma;
+  
+  dxdt_FREE_CD20_BLOOD  = -vf_DimerCD20_BL + vb_DimerCD20_BL - vf_Tri_viaCD3_BL + vb_Tri_toCD3_BL 
+  + syn_CD20_BL - kdegCD20 * C_FreeCD20_BL * Vplasma + flow_FreeCD20_BL 
+  + prod_new_CD20_BL - (koutBC + k_kill_BL) * C_FreeCD20_BL * Vplasma;
+  
+  dxdt_DIMER_CD3_BLOOD  = vf_DimerCD3_BL - vb_DimerCD3_BL - vf_Tri_viaCD3_BL + vb_Tri_toCD3_BL  
+  - kintCD3 * C_DimerCD3_BL * Vplasma - koutTC * C_DimerCD3_BL * Vplasma + flow_DimerCD3_BL 
+  + (koutBC + k_kill_BL) * C_Trimer_BL * Vplasma; 
+  
+  dxdt_DIMER_CD20_BLOOD = vf_DimerCD20_BL - vb_DimerCD20_BL - vf_Tri_viaCD20_BL + vb_Tri_toCD20_BL  
+  - kintCD20 * C_DimerCD20_BL * Vplasma + flow_DimerCD20_BL 
+  + koutTC * C_Trimer_BL * Vplasma 
+  - (koutBC + k_kill_BL) * C_DimerCD20_BL * Vplasma; 
+  
+  dxdt_TRIMER_BLOOD     = vf_Tri_viaCD3_BL + vf_Tri_viaCD20_BL - vb_Tri_toCD3_BL - vb_Tri_toCD20_BL 
+  + flow_Trimer_BL
+  - (koutTC + koutBC + k_kill_BL) * C_Trimer_BL * Vplasma;
+  
+  // SPLEEN
+  dxdt_FREE_CD3_SPLEEN   = -vf_DimerCD3_SP + vb_DimerCD3_SP - vf_Tri_viaCD20_SP + vb_Tri_toCD20_SP - kdegCD3 * C_FreeCD3_SP * Vspleen + syn_CD3_SP + flow_FreeCD3_SP - koutTC * C_FreeCD3_SP * Vspleen;
+  dxdt_FREE_CD20_SPLEEN  = -vf_DimerCD20_SP + vb_DimerCD20_SP - vf_Tri_viaCD3_SP + vb_Tri_toCD3_SP - kdegCD20 * C_FreeCD20_SP * Vspleen + syn_CD20_SP + flow_FreeCD20_SP - (koutBC + k_kill_SP) * C_FreeCD20_SP * Vspleen;
+  dxdt_DIMER_CD3_SPLEEN  = vf_DimerCD3_SP - vb_DimerCD3_SP - vf_Tri_viaCD3_SP + vb_Tri_toCD3_SP - kintCD3 * C_DimerCD3_SP * Vspleen - koutTC * C_DimerCD3_SP * Vspleen + flow_DimerCD3_SP + (koutBC + k_kill_SP) * C_Trimer_SP * Vspleen;
+  dxdt_DIMER_CD20_SPLEEN = vf_DimerCD20_SP - vb_DimerCD20_SP - vf_Tri_viaCD20_SP + vb_Tri_toCD20_SP - kintCD20 * C_DimerCD20_SP * Vspleen + flow_DimerCD20_SP + koutTC * C_Trimer_SP * Vspleen - (koutBC + k_kill_SP) * C_DimerCD20_SP * Vspleen;
+  dxdt_TRIMER_SPLEEN     = vf_Tri_viaCD3_SP + vf_Tri_viaCD20_SP - vb_Tri_toCD3_SP - vb_Tri_toCD20_SP + flow_Trimer_SP - (koutTC + koutBC + k_kill_SP) * C_Trimer_SP * Vspleen;
+  
+  // NODE
+  dxdt_FREE_CD3_NODE   = -vf_DimerCD3_LN + vb_DimerCD3_LN - vf_Tri_viaCD20_LN + vb_Tri_toCD20_LN - kdegCD3 * C_FreeCD3_LN * Vnode + syn_CD3_LN + flow_FreeCD3_LN - koutTC * C_FreeCD3_LN * Vnode
+  - vf_Tri_Tumor_viaCD20 + vb_Tri_Tumor_toCD20; 
+  
+  dxdt_FREE_CD20_NODE  = -vf_DimerCD20_LN + vb_DimerCD20_LN - vf_Tri_viaCD3_LN + vb_Tri_toCD3_LN - kdegCD20 * C_FreeCD20_LN * Vnode + syn_CD20_LN + flow_FreeCD20_LN - (koutBC + k_kill_LN) * C_FreeCD20_LN * Vnode;
+  
+  dxdt_DIMER_CD3_NODE  = vf_DimerCD3_LN - vb_DimerCD3_LN - vf_Tri_viaCD3_LN + vb_Tri_toCD3_LN - kintCD3 * C_DimerCD3_LN * Vnode - koutTC * C_DimerCD3_LN * Vnode + flow_DimerCD3_LN 
+  + (koutBC + k_kill_LN) * C_Trimer_LN * Vnode 
+  - vf_Tri_Tumor_viaCD3 + vb_Tri_Tumor_toCD3 
+  + k_kill_Tumor_frac * TRIMER_TUMOR;
+  
+  dxdt_DIMER_CD20_NODE = vf_DimerCD20_LN - vb_DimerCD20_LN - vf_Tri_viaCD20_LN + vb_Tri_toCD20_LN - kintCD20 * C_DimerCD20_LN * Vnode + flow_DimerCD20_LN + koutTC * C_Trimer_LN * Vnode - (koutBC + k_kill_LN) * C_DimerCD20_LN * Vnode;
+  
+  dxdt_TRIMER_NODE     = vf_Tri_viaCD3_LN + vf_Tri_viaCD20_LN - vb_Tri_toCD3_LN - vb_Tri_toCD20_LN + flow_Trimer_LN - (koutTC + koutBC + k_kill_LN) * C_Trimer_LN * Vnode;
+  
+  // NODE (Tumor Binding)
+  double syn_CD20_Tumor = kdegCD20 * Cells_Reachable * R_CD20_tumor * nmol_per_molecule; 
+  
+  dxdt_FREE_CD20_TUMOR  = -vf_DimerCD20_Tumor + vb_DimerCD20_Tumor - vf_Tri_Tumor_viaCD3 + vb_Tri_Tumor_toCD3 
+  - kdegCD20 * C_FreeCD20_Tumor * Vnode + syn_CD20_Tumor
+  - k_kill_Tumor_frac * FREE_CD20_TUMOR; 
+  
+  dxdt_DIMER_CD20_TUMOR = vf_DimerCD20_Tumor - vb_DimerCD20_Tumor - vf_Tri_Tumor_viaCD20 + vb_Tri_Tumor_toCD20 
+  - kintCD20 * C_DimerCD20_Tumor * Vnode 
+  + koutTC * C_Trimer_Tumor * Vnode 
+  - k_kill_Tumor_frac * DIMER_CD20_TUMOR;
+  
+  dxdt_TRIMER_TUMOR     = vf_Tri_Tumor_viaCD3 + vf_Tri_Tumor_viaCD20 - vb_Tri_Tumor_toCD3 - vb_Tri_Tumor_toCD20
+  - koutTC * C_Trimer_Tumor * Vnode
+  - k_kill_Tumor_frac * TRIMER_TUMOR;
+  
+  // LYMPH
+  dxdt_FREE_CD3_LYMPH   = -vf_DimerCD3_LY + vb_DimerCD3_LY - vf_Tri_viaCD20_LY + vb_Tri_toCD20_LY - kdegCD3 * C_FreeCD3_LY * Vlymph + syn_CD3_LY + flow_FreeCD3_LY - koutTC * C_FreeCD3_LY * Vlymph;
+  dxdt_FREE_CD20_LYMPH  = -vf_DimerCD20_LY + vb_DimerCD20_LY - vf_Tri_viaCD3_LY + vb_Tri_toCD3_LY - kdegCD20 * C_FreeCD20_LY * Vlymph + syn_CD20_LY + flow_FreeCD20_LY - (koutBC + k_kill_LY) * C_FreeCD20_LY * Vlymph;
+  dxdt_DIMER_CD3_LYMPH  = vf_DimerCD3_LY - vb_DimerCD3_LY - vf_Tri_viaCD3_LY + vb_Tri_toCD3_LY - kintCD3 * C_DimerCD3_LY * Vlymph - koutTC * C_DimerCD3_LY * Vlymph + flow_DimerCD3_LY + (koutBC + k_kill_LY) * C_Trimer_LY * Vlymph;
+  dxdt_DIMER_CD20_LYMPH = vf_DimerCD20_LY - vb_DimerCD20_LY - vf_Tri_viaCD20_LY + vb_Tri_toCD20_LY - kintCD20 * C_DimerCD20_LY * Vlymph + flow_DimerCD20_LY + koutTC * C_Trimer_LY * Vlymph - (koutBC + k_kill_LY) * C_DimerCD20_LY * Vlymph;
+  dxdt_TRIMER_LYMPH     = vf_Tri_viaCD3_LY + vf_Tri_viaCD20_LY - vb_Tri_toCD3_LY - vb_Tri_toCD20_LY + flow_Trimer_LY - (koutTC + koutBC + k_kill_LY) * C_Trimer_LY * Vlymph;
+  
+  // Update PK due to Binding
+  dxdt_PLASMA = dxdt_PLASMA - (vf_DimerCD3_BL - vb_DimerCD3_BL) - (vf_DimerCD20_BL - vb_DimerCD20_BL);
+  dxdt_SPLEEN = dxdt_SPLEEN - (vf_DimerCD3_SP - vb_DimerCD3_SP) - (vf_DimerCD20_SP - vb_DimerCD20_SP);
+  dxdt_NODE   = dxdt_NODE   - (vf_DimerCD3_LN - vb_DimerCD3_LN) - (vf_DimerCD20_LN - vb_DimerCD20_LN)
+    - (vf_DimerCD20_Tumor - vb_DimerCD20_Tumor); 
+  dxdt_LYMPH  = dxdt_LYMPH  - (vf_DimerCD3_LY - vb_DimerCD3_LY) - (vf_DimerCD20_LY - vb_DimerCD20_LY);
+  
+  // ============================================================
+  // 8. ACTIVATION SUBMODEL (vATC)
+  // ============================================================
+  // 1. Activation against Tumor (only in node)
+  double Trimer_per_Tumor = 0.0;
+  if (Cells_Reachable > 1.0) {
+    Trimer_per_Tumor = (CLAMP(TRIMER_TUMOR) / nmol_per_molecule) / Cells_Reachable;
+  }
+  double RELU = 0.01; 
+  if (Trimer_per_Tumor > Trimer_Threshold) RELU = 1.0; 
+  
+  double rate_act_Tumor = 0.0;
+  if (T_SIM > TAD) {
+    rate_act_Tumor = RELU * sim_slopetumor * Trimer_per_Tumor;
+  }
+  
+  // 2. Activation against B-Cells
+  double Trimer_per_BC_BL = (BC_BLOOD > 1)  ? (CLAMP(TRIMER_BLOOD) / nmol_per_molecule) / BC_BLOOD  : 0.0;
+  double Trimer_per_BC_SP = (BC_SPLEEN > 1) ? (CLAMP(TRIMER_SPLEEN) / nmol_per_molecule) / BC_SPLEEN : 0.0;
+  double Trimer_per_BC_LN = (BC_NODE > 1)   ? (CLAMP(TRIMER_NODE) / nmol_per_molecule) / BC_NODE   : 0.0;
+  double Trimer_per_BC_LY = (BC_LYMPH > 1)  ? (CLAMP(TRIMER_LYMPH) / nmol_per_molecule) / BC_LYMPH  : 0.0;
+  
+  double rate_act_BC_BL = (T_SIM > TAD) ? sim_slope * Trimer_per_BC_BL : 0.0;
+  double rate_act_BC_SP = (T_SIM > TAD) ? sim_slope * Trimer_per_BC_SP : 0.0;
+  double rate_act_BC_LN = (T_SIM > TAD) ? sim_slope * Trimer_per_BC_LN : 0.0;
+  double rate_act_BC_LY = (T_SIM > TAD) ? sim_slope * Trimer_per_BC_LY : 0.0;
+  
+  // 3. vATC Trafficking
+  double flow_vATC_BL_SP = kpt * (1 + INJ_Scaler * INJ) * vATC_BC_BLOOD; // Removed redundant clamp
+  double flow_vATC_SP_LN = ktn * vATC_BC_SPLEEN;
+  double flow_vATC_LN_LY = knl * vATC_BC_NODE; 
+  double flow_vATC_LY_BL = klp * vATC_BC_LYMPH;
+  
+  // 4. pATC Trafficking
+  double flow_pATC_BL_SP = kpt * (1 + INJ_Scaler * INJ) * pATC_BLOOD;
+  double flow_pATC_SP_LN = ktn * pATC_SPLEEN;
+  double flow_pATC_LN_LY = knl * pATC_NODE;
+  double flow_pATC_LY_BL = klp * pATC_LYMPH;
+  
+  // 5. Expansion & Death
+  double exp_BL_rate = expand_factor * vATC_BC_BLOOD;
+  double exp_SP_rate = expand_factor * vATC_BC_SPLEEN;
+  double exp_LN_rate = expand_factor * (vATC_BC_NODE + vATC_TUMOR_NODE); 
+  double exp_LY_rate = expand_factor * vATC_BC_LYMPH;
+  
+  double rate_death_ATC = (T_SIM > (TAD + Tp)) ? koutATC : 0.0;
+  
+  // 6. ODEs
+  dxdt_vATC_BC_BLOOD  = rate_act_BC_BL + flow_vATC_LY_BL - flow_vATC_BL_SP - rate_death_ATC * vATC_BC_BLOOD;
+  dxdt_vATC_BC_SPLEEN = rate_act_BC_SP + flow_vATC_BL_SP - flow_vATC_SP_LN - rate_death_ATC * vATC_BC_SPLEEN;
+  dxdt_vATC_BC_NODE   = rate_act_BC_LN + flow_vATC_SP_LN - flow_vATC_LN_LY - rate_death_ATC * vATC_BC_NODE;
+  dxdt_vATC_BC_LYMPH  = rate_act_BC_LY + flow_vATC_LN_LY - flow_vATC_LY_BL - rate_death_ATC * vATC_BC_LYMPH;
+  
+  dxdt_vATC_TUMOR_NODE = rate_act_Tumor - rate_death_ATC * vATC_TUMOR_NODE;
+  
+  dxdt_pATC_BLOOD  = exp_BL_rate + flow_pATC_LY_BL - flow_pATC_BL_SP - rate_death_ATC * pATC_BLOOD;
+  dxdt_pATC_SPLEEN = exp_SP_rate + flow_pATC_BL_SP - flow_pATC_SP_LN - rate_death_ATC * pATC_SPLEEN;
+  dxdt_pATC_NODE   = exp_LN_rate + flow_pATC_SP_LN - flow_pATC_LN_LY - rate_death_ATC * pATC_NODE;
+  dxdt_pATC_LYMPH  = exp_LY_rate + flow_pATC_LN_LY - flow_pATC_LY_BL - rate_death_ATC * pATC_LYMPH;
+} 
+
+$TABLE
+double Total_pATC = CLAMP(pATC_BLOOD) + CLAMP(pATC_SPLEEN) + CLAMP(pATC_NODE) + CLAMP(pATC_LYMPH);
+double C_Trimer_BL_nM = CLAMP(TRIMER_BLOOD) / Vplasma;
+double Tumor_Vol_cm3 = TUMOR_CELLS / 1e9;
+
+$CAPTURE C_plasma Total_pATC C_Trimer_BL_nM Tumor_Vol_cm3  

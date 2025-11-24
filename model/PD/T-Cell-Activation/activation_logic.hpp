@@ -84,7 +84,7 @@ inline ActivationRates calculate_activation_rates(
   
   res.d_vATC_BC_BL  = rate_act_BC_BL + flow_vATC_LY_BL - flow_vATC_BL_SP - rate_death_ATC * vATC_BC_BLOOD;
   res.d_vATC_BC_SP  = rate_act_BC_SP + flow_vATC_BL_SP - flow_vATC_SP_LN - rate_death_ATC * vATC_BC_SPLEEN;
-  res.d_vATC_BC_NODE= rate_act_BC_LN + flow_vATC_SP_LN - flow_vATC_LN_LY - rate_death_ATC * vATC_BC_NODE;
+  res.d_vATC_BC_LN  = rate_act_BC_LN + flow_vATC_SP_LN - flow_vATC_LN_LY - rate_death_ATC * vATC_BC_NODE;
   res.d_vATC_BC_LY  = rate_act_BC_LY + flow_vATC_LN_LY - flow_vATC_LY_BL - rate_death_ATC * vATC_BC_LYMPH;
   
   res.d_vATC_Tumor  = rate_act_Tumor - rate_death_ATC * vATC_TUMOR_NODE;

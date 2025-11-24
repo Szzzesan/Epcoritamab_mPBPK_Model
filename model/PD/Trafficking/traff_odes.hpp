@@ -1,8 +1,10 @@
 // Trafficking ODEs
 
 // Injection & Homeostasis
+// We need the current TC_BLOOD count vs baseline to drive production
+// Note: Simplified version of Eq 1344 for now (assuming steady state baseline is normalized)
 dxdt_INJ = -kdecay * INJ;
-dxdt_AF_TC = kt * (1 - AF_TC);
+dxdt_AF_TC = kt * (1 - AF_TC); // Placeholder: Full equation requires linking to TC count
 dxdt_AF_BC = kt * (1 - AF_BC);
 
 //T-Cell Derivatives

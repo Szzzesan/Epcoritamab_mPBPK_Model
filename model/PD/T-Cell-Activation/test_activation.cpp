@@ -88,8 +88,6 @@ $GLOBAL
 double AVOG = 6.022e23;
 double nmol_per_molecule = 1e9 / AVOG;
 
-#include "activation_logic.hpp"
-
 $MAIN
 // Initialize Activation Compartments to 0 (Start inactive)
 if(NEWIND <= 1) {
@@ -128,31 +126,82 @@ $ODE @!audit
 // #include "activation_odes.hpp"
 // #undef TimeAfterDose
 
-ActivationRates act_res = calculate_activation_rates(
-  TIME,
-  BC_BLOOD, BC_SPLEEN, BC_NODE, BC_LYMPH,
-  TRIMER_BLOOD, TRIMER_SPLEEN, TRIMER_NODE, TRIMER_LYMPH,
-  vATC_BC_BLOOD, vATC_BC_SPLEEN, vATC_BC_NODE, vATC_BC_LYMPH,
-  vATC_TUMOR_NODE,
-  pATC_BLOOD, pATC_SPLEEN, pATC_NODE, pATC_LYMPH,
-  INJ,
-  sim_slope, sim_slopetumor, expand_factor, koutATC,
-  TAD, Tp, Trimer_Threshold,
-  kpt, ktn, knl, klp, INJ_Scaler,
-  nmol_per_molecule
-);
+// --- ACTIVATION LOGIC ---
+// Declarations FIRST (to avoid mrgsolve hoisting errors)
+double rate_act_Tumor;
+double rate_act_BC_BL;
+double rate_act_BC_SP;
+double rate_act_BC_LN;
+double rate_act_BC_LY;
+double rate_death_ATC;
 
-// Assign Derivatives
-dxdt_vATC_BC_BLOOD  = act_res.d_vATC_BC_BL;
-dxdt_vATC_BC_SPLEEN = act_res.d_vATC_BC_SP;
-dxdt_vATC_BC_NODE   = act_res.d_vATC_BC_LN;
-dxdt_vATC_BC_LYMPH  = act_res.d_vATC_BC_LY;
-dxdt_vATC_TUMOR_NODE= act_res.d_vATC_Tumor;
-dxdt_pATC_BLOOD     = act_res.d_pATC_BL;
-dxdt_pATC_SPLEEN    = act_res.d_pATC_SP;
-dxdt_pATC_NODE      = act_res.d_pATC_LN;
-dxdt_pATC_LYMPH     = act_res.d_pATC_LY;
+// Logic Block
+{
+  // 1. Activation against Tumor
+  double TUMOR_CELLS = 0.0; 
+  double Trimer_per_Tumor = 0.0;
+  
+  if (TUMOR_CELLS > 1.0) {
+    Trimer_per_Tumor = (CLAMP(TRIMER_NODE) / nmol_per_molecule) / TUMOR_CELLS;
+  }
+  
+  double RELU = 0.01; 
+  if (Trimer_per_Tumor > Trimer_Threshold) {
+    RELU = 1.0; 
+  }
+  
+  rate_act_Tumor = 0.0;
+  if (TIME > TAD) {
+    rate_act_Tumor = RELU * sim_slopetumor * Trimer_per_Tumor;
+  }
+  
+  // 2. Activation against B-Cells
+  double Trimer_per_BC_BL = (CLAMP(BC_BLOOD) > 1)  ? (CLAMP(TRIMER_BLOOD) / nmol_per_molecule) / BC_BLOOD  : 0.0;
+  double Trimer_per_BC_SP = (CLAMP(BC_SPLEEN) > 1) ? (CLAMP(TRIMER_SPLEEN) / nmol_per_molecule) / BC_SPLEEN : 0.0;
+  double Trimer_per_BC_LN = (CLAMP(BC_NODE) > 1)   ? (CLAMP(TRIMER_NODE) / nmol_per_molecule) / BC_NODE   : 0.0;
+  double Trimer_per_BC_LY = (CLAMP(BC_LYMPH) > 1)  ? (CLAMP(TRIMER_LYMPH) / nmol_per_molecule) / BC_LYMPH  : 0.0;
+  
+  rate_act_BC_BL = (TIME > TAD) ? sim_slope * Trimer_per_BC_BL : 0.0;
+  rate_act_BC_SP = (TIME > TAD) ? sim_slope * Trimer_per_BC_SP : 0.0;
+  rate_act_BC_LN = (TIME > TAD) ? sim_slope * Trimer_per_BC_LN : 0.0;
+  rate_act_BC_LY = (TIME > TAD) ? sim_slope * Trimer_per_BC_LY : 0.0;
+  
+  // 3. Rate of Death (Time dependent)
+  rate_death_ATC = (TIME > (TAD + Tp)) ? koutATC : 0.0;
+}
 
+// --- Trafficking Flows ---
+double flow_vATC_BL_SP = kpt * (1 + INJ_Scaler * INJ) * CLAMP(vATC_BC_BLOOD);
+double flow_vATC_SP_LN = ktn * CLAMP(vATC_BC_SPLEEN);
+double flow_vATC_LN_LY = knl * CLAMP(vATC_BC_NODE); 
+double flow_vATC_LY_BL = klp * CLAMP(vATC_BC_LYMPH);
+
+double flow_pATC_BL_SP = kpt * (1 + INJ_Scaler * INJ) * CLAMP(pATC_BLOOD);
+double flow_pATC_SP_LN = ktn * CLAMP(pATC_SPLEEN);
+double flow_pATC_LN_LY = knl * CLAMP(pATC_NODE);
+double flow_pATC_LY_BL = klp * CLAMP(pATC_LYMPH);
+
+// --- Expansion Rates ---
+double exp_BL_rate = expand_factor * CLAMP(vATC_BC_BLOOD);
+double exp_SP_rate = expand_factor * CLAMP(vATC_BC_SPLEEN);
+double exp_LN_rate = expand_factor * (CLAMP(vATC_BC_NODE) + CLAMP(vATC_TUMOR_NODE)); 
+double exp_LY_rate = expand_factor * CLAMP(vATC_BC_LYMPH);
+
+// --- DERIVATIVES ---
+// vATC_BC
+dxdt_vATC_BC_BLOOD  = rate_act_BC_BL + flow_vATC_LY_BL - flow_vATC_BL_SP - rate_death_ATC * vATC_BC_BLOOD;
+dxdt_vATC_BC_SPLEEN = rate_act_BC_SP + flow_vATC_BL_SP - flow_vATC_SP_LN - rate_death_ATC * vATC_BC_SPLEEN;
+dxdt_vATC_BC_NODE   = rate_act_BC_LN + flow_vATC_SP_LN - flow_vATC_LN_LY - rate_death_ATC * vATC_BC_NODE;
+dxdt_vATC_BC_LYMPH  = rate_act_BC_LY + flow_vATC_LN_LY - flow_vATC_LY_BL - rate_death_ATC * vATC_BC_LYMPH;
+
+// vATC_TUMOR
+dxdt_vATC_TUMOR_NODE = rate_act_Tumor - rate_death_ATC * vATC_TUMOR_NODE;
+
+// pATC
+dxdt_pATC_BLOOD  = exp_BL_rate + flow_pATC_LY_BL - flow_pATC_BL_SP - rate_death_ATC * pATC_BLOOD;
+dxdt_pATC_SPLEEN = exp_SP_rate + flow_pATC_BL_SP - flow_pATC_SP_LN - rate_death_ATC * pATC_SPLEEN;
+dxdt_pATC_NODE   = exp_LN_rate + flow_pATC_SP_LN - flow_pATC_LN_LY - rate_death_ATC * pATC_NODE;
+dxdt_pATC_LYMPH  = exp_LY_rate + flow_pATC_LN_LY - flow_pATC_LY_BL - rate_death_ATC * pATC_LYMPH;
 
 
 $TABLE
