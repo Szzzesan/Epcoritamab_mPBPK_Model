@@ -1,4 +1,33 @@
+---
+title: "Epcoritamab_mPBPK_QSP Implementation"
+subtitle: "Mechanistic Simulation of Bispecific Antibody Therapy in B-Cell Lymphoma"
+author: "Shichen Zhang"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(mrgsolve)
+library(tidyverse)
+library(patchwork) 
+```
+### 1. Introduction
+This report implements the semi-mechanistic PBPK/PD model for Epcoritamab (CD3xCD20), based on Li et al. (2022). The model integrates five biological sub-systems to predict tumor response from first principles:  
+1.  **Pharmacokinetics (PK):** Two-pore distribution of the antibody.    
+2.  **Trafficking:** Recirculation of T-cells and B-cells between blood and lymphoid tissues.  
+3.  **Binding:** Kinetic formation of the pharmacologically active **Trimer** ($T-Drug-B$).  
+4.  **Activation:** Trimer-dependent activation and expansion of cytotoxic T-cells.  
+5.  **Killing:** Elimination of B-cells and Tumor cells by activated T-cells.  
 
+### 2. Model Structure
+The model is implemented in C++ using `mrgsolve`. It integrates five submodels (PK, Trafficking, Binding, Activation, Killing) into a single system of differential equations.
+```{r write-model, class.source = 'fold-hide'}
+model_code <- '
 $PARAM @annotated
 // --- PK Parameters ---
 ka          : 0.131   : Absorption rate (1/day)
@@ -514,4 +543,122 @@ double C_Trimer_BL_nM = CLAMP(TRIMER_BLOOD) / Vplasma;
 double Tumor_Vol_cm3 = TUMOR_CELLS / 1e9;
 
 $CAPTURE C_plasma Total_pATC C_Trimer_BL_nM Tumor_Vol_cm3
+';
+writeLines(model_code, "../model/epc_complete_for_rmd.cpp")
+```
 
+### 3. Simulation
+```{r simulation-chunk, echo=TRUE, fig.width=12, fig.height=16}
+# 1. Load the Master Model
+mod <- mread("epc_complete_for_rmd", "../model", preclean = TRUE)
+
+# 2. Set up Total Cell Numbers & Define Dosing (48 mg SC)
+# 48 mg -> nmol conversion (mg -> g -> mol -> nmol)
+dose_nmol <- (48 / 1000 / 145623) * 1e9 
+
+# Combined Dose: Drug (DEPOT) + Injection Effect (INJ)
+total_dose <- ev(amt = dose_nmol, cmt = "DEPOT", time = 7) + 
+  ev(amt = 1, cmt = "INJ", time = 7)
+
+V_blood_mm3 <- 5e6 
+total_TC <- 1469 * V_blood_mm3
+total_BC <- 236  * V_blood_mm3
+
+# 3. Run Simulation
+# Note: We use a high maxsteps because binding kinetics are fast
+sim <- mod %>%
+  ev(total_dose) %>%
+  param(Time_First_Dose = 7, scale_binding = 1, kkill_tumor = 0.165e-6) %>%
+  init(
+    TC_BLOOD = total_TC, 
+    BC_BLOOD = total_BC, 
+    TC_SPLEEN = total_TC * 30,
+    BC_SPLEEN = total_BC * 30, 
+    TC_NODE = total_TC * 0.03, 
+    BC_NODE = total_BC * 0.03, 
+    TC_LYMPH = total_TC * 19, 
+    BC_LYMPH = total_BC * 19, 
+    AF_TC = 1, 
+    AF_BC = 1, 
+    INJ = 0
+  ) %>%
+  # Run for 12 weeks (84 days)
+  mrgsim(end = 84, delta = 0.1, 
+         atol = 1e-3, rtol = 1e-3,
+         maxsteps = 1e9) %>%
+  as_tibble()
+print('Finish running the simulation')
+
+# --- 4. DEBUGGING PLOTS (The Chain of Causality) ---
+
+# A. PK Check: Is drug getting into the system?
+p1 <- ggplot(sim, aes(x = time, y = C_plasma)) +
+  geom_line(color = "blue", linewidth = 1) +
+  labs(title = "1. PK Check: Plasma Conc", y = "Conc (nM)", x = "Time (Days)") +
+  theme_bw()
+
+# B. Trafficking Check: Are T-Cells leaving the blood?
+p2 <- ggplot(sim, aes(x = time, y = TC_BLOOD)) +
+  geom_line(color = "orange", linewidth = 1) +
+  labs(
+    title = "2. Trafficking Check: Blood T-Cells", 
+    subtitle = "Note the immediate drop (Injection Effect) and slow recovery (Homeostasis)",
+    y = "Cell Count", 
+    x = "Time (Days)"
+  ) +
+  theme_bw()
+
+# C. Binding Check: Are Trimers forming in the blood?
+p3 <- ggplot(sim, aes(x = time, y = C_Trimer_BL_nM)) +
+  geom_line(color = "darkgreen", linewidth = 1) +
+  labs(title = "5. Binding Check: Blood Trimer", y = "Conc (nM)", x = "Time (Days)") +
+  theme_bw()
+
+p3_zoomed <- ggplot(sim, aes(x = time, y = C_Trimer_BL_nM)) +
+  geom_line(color = "darkgreen", linewidth = 1) +
+  labs(title = "5. Binding Check: Blood Trimer (Zoomed in)",
+       subtitle = "The second smaller hump is likely driven by T-cell expansion",
+       y = "Conc (nM)", x = "Time (Days)") +
+  coord_cartesian(ylim = c(0, 1e-6)) +
+  theme_bw()
+
+p_bcell <- ggplot(sim, aes(x = time, y = BC_BLOOD)) +
+  geom_line(color = "blue", linewidth = 1) +
+  labs(
+    title = "4. B-Cell Depletion",
+    subtitle = "B-Cells get depleted as an intended therapeutic goal of Epc",
+    y = "B-Cell Count (Blood)",
+    x = "Time (Days)"
+  ) +
+  scale_y_continuous(labels = scales::scientific) +
+  # coord_cartesian(xlim = c(0, 10)) + # Zoom in on the crash
+  theme_bw()
+
+
+# D. Activation Check: Are T-cells expanding?
+p4 <- ggplot(sim, aes(x = time, y = Total_pATC)) +
+  geom_line(color = "purple", linewidth = 1) +
+  labs(title = "3. Activation Check: Total Activated T-Cells", y = "Cell Count", x = "Time (Days)") +
+  theme_bw()
+
+# E. Efficacy Check: Is the Tumor shrinking?
+p5 <- ggplot(sim, aes(x = time, y = Tumor_Vol_cm3)) +
+  geom_line(color = "red", linewidth = 1) +
+  labs(title = "6. Efficacy: Tumor Volume", y = "Volume (cm3)", x = "Time (Days)") +
+  theme_bw()
+
+library(patchwork)
+
+# Layout: 
+# Row 1: PK | Trafficking
+# Row 2: Activation | B-Cells
+# Row 3: Trimer | Trimer Zoomed
+# Row 4: Tumor (Full Width)
+layout <- (p1 + p2) / (p4 + p_bcell) / (p3 + p3_zoomed) / p5
+
+# Add Main Title and Print
+layout + plot_annotation(
+  title = 'Epcoritamab QSP Model Results',
+  subtitle = 'Simulation of 48mg SC Dose at Day 7: Mechanisms and Efficacy'
+)
+```

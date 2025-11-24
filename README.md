@@ -11,16 +11,19 @@ The model implements the work of *Li et al. (2022)*, simulating the interactions
 
 ## Repository Structure
 ├── model/ 
-│ ├── epc_complete.cpp # The MASTER model file (Run this one) 
+│ ├── epc_complete.cpp # The MASTER model file  
 │ ├── PK/ # (Development) Isolated PK submodel 
 │ └── PD/ # (Development) Isolated PD submodels 
 
 ├── scripts/ 
-│ ├── run_complete.R # MAIN SCRIPT: Runs the full simulation & plots 
-│ ├── run_tests.R # (Legacy) Unit tests for individual submodels 
-│ └── Epcoritamab_Report.Rmd # R Markdown source for the final report 
+│ ├── run_complete.R # MAIN SCRIPT: Runs the full simulation & plots (Run this one) 
+│ └── run_tests.R # (Legacy) Unit tests for individual submodels 
 
-├── output/ # The plots for each step to make sure the model is physiologically and mathematically sound
+├── data/ # not used here
+
+├── output/
+│ ├── Epcoritamab_mPBPK_QSP.Rmd # R Markdown source for the final report
+│ └── Epcoritamab_mPBPK_QSP.html # html final report
 
 └── Epcoritamab_mPBPK_Model.Rproj
 
@@ -35,7 +38,7 @@ The model implements the work of *Li et al. (2022)*, simulating the interactions
 1.  Clone this repository.
 2.  Open `Epcoritamab_mPBPK_Model.Rproj` in RStudio.
 3.  Open **`scripts/run_complete.R`**.
-4.  Run the script to compile the model and generate the diagnostic dashboard.
+4.  Run the script to compile the model and generate plots.
 
 ## Model Details
 ### Mechanism of Action (MoA)
