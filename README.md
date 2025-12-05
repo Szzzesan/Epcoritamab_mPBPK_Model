@@ -10,21 +10,21 @@ The model implements the work of *Li et al. (2022)*, simulating the interactions
 * **Mechanistic Detail:** Explicitly models Trimer formation ($Drug-CD3-CD20$) as the driver of efficacy.
 
 ## Repository Structure
-├── model/ 
-│ ├── epc_complete.cpp # The MASTER model file  
-│ ├── PK/ # (Development) Isolated PK submodel 
-│ └── PD/ # (Development) Isolated PD submodels 
-
-├── scripts/ 
-│ ├── run_complete.R # MAIN SCRIPT: Runs the full simulation & plots (Run this one) 
-│ └── run_tests.R # (Legacy) Unit tests for individual submodels 
-
-├── data/ # not used here
-
-├── output/
-│ └── Epcoritamab_mPBPK_QSP.Rmd # R Markdown source for the final report
-
-└── Epcoritamab_mPBPK_Model.Rproj
+├── model/   
+│ ├── epc_complete.cpp # The MASTER model file    
+│ ├── PK/ # (Development) Isolated PK submodel   
+│ └── PD/ # (Development) Isolated PD submodels   
+  
+├── scripts/   
+│ ├── run_complete.R # MAIN SCRIPT: Runs the full simulation & plots (Run this one)   
+│ └── run_tests.R # (Legacy) Unit tests for individual submodels   
+  
+├── data/ # not used here  
+  
+├── output/  
+│ └── Epcoritamab_mPBPK_QSP.Rmd # R Markdown source for the final report  
+  
+└── Epcoritamab_mPBPK_Model.Rproj  
 
 ## Getting Started
 
